@@ -16,11 +16,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @CrossOrigin(origins = "*", maxAge = 3600)
@@ -45,27 +41,20 @@ public class AuthController {
 
     @PostMapping("/signin")
     public ResponseEntity<?> authenticateUser(@RequestBody User loginRequest) {
-        // 1. Authenticate the user
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(loginRequest.getUsername(), loginRequest.getPassword()));
 
-        // 2. Update Security Context
         SecurityContextHolder.getContext().setAuthentication(authentication);
-
-        // 3. Generate the token using the fixed secret from our updated JwtUtils
         String jwt = jwtUtils.generateJwtToken(authentication);
 
-        // 4. Get User Details to send back useful info to the dashboard
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
         List<String> roles = userDetails.getAuthorities().stream()
                 .map(item -> item.getAuthority())
                 .collect(Collectors.toList());
 
-        // 5. MISSION CRITICAL: Align keys with api.ts expectations
         Map<String, Object> response = new HashMap<>();
-        response.put("token", jwt); // Matches localStorage.getItem("token")
-        response.put("accessToken", jwt); // Fallback for flexibility
-        response.put("type", "Bearer");
+        response.put("token", jwt);
+        response.put("accessToken", jwt);
         response.put("id", userDetails.getId());
         response.put("username", userDetails.getUsername());
         response.put("email", userDetails.getEmail());
@@ -76,36 +65,47 @@ public class AuthController {
 
     @PostMapping("/signup")
     public ResponseEntity<?> registerUser(@RequestBody User signUpRequest) {
-        // 1. Check for existing credentials
         if (userRepository.existsByUsername(signUpRequest.getUsername())) {
-            Map<String, String> err = new HashMap<>();
-            err.put("error", "Username is already taken!");
-            return ResponseEntity.badRequest().body(err);
+            return ResponseEntity.badRequest().body(Map.of("error", "Username is already taken!"));
         }
 
         if (userRepository.existsByEmail(signUpRequest.getEmail())) {
-            Map<String, String> err = new HashMap<>();
-            err.put("error", "Email is already in use!");
-            return ResponseEntity.badRequest().body(err);
+            return ResponseEntity.badRequest().body(Map.of("error", "Email is already in use!"));
         }
 
-        // 2. Create new user's account
         User user = new User(signUpRequest.getUsername(),
                 signUpRequest.getEmail(),
                 encoder.encode(signUpRequest.getPassword()));
 
-        // 3. Set Default Role (ROLE_LAWYER)
+        String strRole = signUpRequest.getRole();
         Set<Role> roles = new HashSet<>();
-        Role userRole = roleRepository.findByName(ERole.ROLE_LAWYER)
-                .orElseThrow(() -> new RuntimeException("Error: Role is not found."));
-        roles.add(userRole);
+
+        if (strRole == null) {
+            Role lawyerRole = roleRepository.findByName(ERole.ROLE_LAWYER)
+                    .orElseThrow(() -> new RuntimeException("Error: Role is not found."));
+            roles.add(lawyerRole);
+        } else {
+            switch (strRole.toUpperCase()) {
+                case "CLERK":
+                    Role clerkRole = roleRepository.findByName(ERole.ROLE_CLERK)
+                            .orElseThrow(() -> new RuntimeException("Error: Role is not found."));
+                    roles.add(clerkRole);
+                    break;
+                case "CLIENT":
+                    Role clientRole = roleRepository.findByName(ERole.ROLE_CLIENT)
+                            .orElseThrow(() -> new RuntimeException("Error: Role is not found."));
+                    roles.add(clientRole);
+                    break;
+                default:
+                    Role lawyerRole = roleRepository.findByName(ERole.ROLE_LAWYER)
+                            .orElseThrow(() -> new RuntimeException("Error: Role is not found."));
+                    roles.add(lawyerRole);
+            }
+        }
 
         user.setRoles(roles);
         userRepository.save(user);
 
-        // 4. Clean Response
-        Map<String, String> response = new HashMap<>();
-        response.put("message", "User registered successfully!");
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(Map.of("message", "User registered successfully as " + (strRole != null ? strRole : "LAWYER")));
     }
 }

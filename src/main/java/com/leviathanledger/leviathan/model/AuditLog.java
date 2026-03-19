@@ -3,6 +3,10 @@ package com.leviathanledger.leviathan.model;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
+/**
+ * LexTracker Audit Ledger
+ * Purpose: Provides a forensic trail of every "Certified" action in the system.
+ */
 @Entity
 @Table(name = "audit_logs")
 public class AuditLog {
@@ -11,12 +15,18 @@ public class AuditLog {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(nullable = false)
     private String action;
+
+    @Column(nullable = false)
     private String username;
+
+    @Column(nullable = false)
     private LocalDateTime timestamp;
+
+    @Column(length = 1000)
     private String details;
 
-    // LexTracker V2.0 Anti-Corruption Fields
     private String ipAddress;
     private String deviceFingerprint;
 
@@ -33,7 +43,8 @@ public class AuditLog {
         this.timestamp = LocalDateTime.now();
     }
 
-    // Getters and Setters
+    // --- GETTERS AND SETTERS ---
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 

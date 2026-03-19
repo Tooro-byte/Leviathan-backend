@@ -10,6 +10,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
+/**
+ * Custom UserDetails implementation to bridge the User entity with Spring Security.
+ */
 public class UserDetailsImpl implements UserDetails {
     private Long id;
     private String username;
@@ -30,6 +33,7 @@ public class UserDetailsImpl implements UserDetails {
     }
 
     public static UserDetailsImpl build(User user) {
+        // Maps ROLE_LAWYER, ROLE_CLERK, etc., to Spring Security authorities
         List<GrantedAuthority> authorities = user.getRoles().stream()
                 .map(role -> new SimpleGrantedAuthority(role.getName().name()))
                 .collect(Collectors.toList());

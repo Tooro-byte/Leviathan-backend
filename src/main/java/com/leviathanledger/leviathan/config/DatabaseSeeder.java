@@ -1,33 +1,40 @@
 package com.leviathanledger.leviathan.config;
+
 import com.leviathanledger.leviathan.model.ERole;
 import com.leviathanledger.leviathan.model.Role;
 import com.leviathanledger.leviathan.repository.RoleRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
+import java.util.Arrays;
+ 
+/**
+ * Ensures the Security Vault is primed with the necessary Persona Roles.
+ * This runs automatically on startup.
+ */
 @Component
 public class DatabaseSeeder implements CommandLineRunner {
 
-    private final RoleRepository roleRepository;
-
-    public DatabaseSeeder(RoleRepository roleRepository) {
-        this.roleRepository = roleRepository;
-    }
+    @Autowired
+    RoleRepository roleRepository;
 
     @Override
-    public void run(String... args) {
+    public void run(String... args) throws Exception {
         seedRoles();
     }
 
     private void seedRoles() {
-        // Loop through the professional ERole enum we refactored
-        for (ERole roleName : ERole.values()) {
-            if (roleRepository.findByName(roleName).isEmpty()) {
+        // We check each role individually to avoid duplicates or missing entries
+        Arrays.stream(ERole.values()).forEach(roleEnum -> {
+            if (roleRepository.findByName(roleEnum).isEmpty()) {
                 Role newRole = new Role();
-                newRole.setName(roleName);
+                newRole.setName(roleEnum);
                 roleRepository.save(newRole);
-                System.out.println("Seeded role: " + roleName);
+                System.out.println("✅ Security Seed: " + roleEnum.name() + " has been initialized.");
             }
-        }
+        });
+
+        System.out.println("🛡️  Leviathan Ledger: All Personas are authorized in the database.");
     }
 }

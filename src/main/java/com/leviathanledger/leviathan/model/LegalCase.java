@@ -25,24 +25,36 @@ public class LegalCase {
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    private String status = "PENDING";
+    private String status = "PENDING"; // PENDING, DISCOVERY, HEARING, JUDGMENT
 
     private String documentPath;
 
+    // --- NEW CLIENT IDENTITY FIELDS ---
+    private String clientName;
+
+    @Column(nullable = false)
+    private String clientEmail; // The "Golden Key" for dashboard access
+
+    private String clientPhone;
+    private String clientLocation;
+    private String clientDob;
+    private Integer clientAge;
+    private String clientPhotoPath; // Store path to the uploaded image
+
+    // --- FINANCIALS ---
+    private Double balance = 0.0;
+
     /**
-     * ALIGNMENT FIX:
-     * We map 'registeredBy' to 'primaryCounsel' in the JSON response
-     * so the Dashboard can display the lawyer's name correctly.
+     * ALIGNMENT FIX: Maps 'registeredBy' to 'primaryCounsel' in JSON
      */
     @JsonProperty("primaryCounsel")
     @Column(updatable = false)
     private String registeredBy;
 
     /**
-     * AUDIT LOGGING:
-     * Using @ElementCollection is perfect for a simple history.
+     * AUDIT LOGGING
      */
-    @ElementCollection(fetch = FetchType.EAGER) // Eager fetch so logs load with the case
+    @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "case_audit_logs", joinColumns = @JoinColumn(name = "case_id"))
     @Column(name = "log_entry")
     @OrderColumn(name = "log_order")
@@ -57,11 +69,15 @@ public class LegalCase {
 
     public LegalCase() {}
 
-    // Logic to auto-log status changes
+    /**
+     * Logic to auto-log status changes with a timestamp.
+     */
     public void setStatus(String newStatus) {
+        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
         if (this.status != null && !this.status.equals(newStatus)) {
-            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
-            this.auditLogs.add("Status transitioned from " + this.status + " to " + newStatus + " [" + timestamp + "]");
+            this.auditLogs.add("⚖️ Status transitioned from " + this.status + " to " + newStatus + " [" + timestamp + "]");
+        } else if (this.status == null) {
+            this.auditLogs.add("🚀 Case Initialized for Client: " + this.clientName + " [" + timestamp + "]");
         }
         this.status = newStatus;
     }
@@ -88,6 +104,30 @@ public class LegalCase {
 
     public String getDocumentPath() { return documentPath; }
     public void setDocumentPath(String documentPath) { this.documentPath = documentPath; }
+
+    public String getClientName() { return clientName; }
+    public void setClientName(String clientName) { this.clientName = clientName; }
+
+    public String getClientEmail() { return clientEmail; }
+    public void setClientEmail(String clientEmail) { this.clientEmail = clientEmail; }
+
+    public String getClientPhone() { return clientPhone; }
+    public void setClientPhone(String clientPhone) { this.clientPhone = clientPhone; }
+
+    public String getClientLocation() { return clientLocation; }
+    public void setClientLocation(String clientLocation) { this.clientLocation = clientLocation; }
+
+    public String getClientDob() { return clientDob; }
+    public void setClientDob(String clientDob) { this.clientDob = clientDob; }
+
+    public Integer getClientAge() { return clientAge; }
+    public void setClientAge(Integer clientAge) { this.clientAge = clientAge; }
+
+    public String getClientPhotoPath() { return clientPhotoPath; }
+    public void setClientPhotoPath(String clientPhotoPath) { this.clientPhotoPath = clientPhotoPath; }
+
+    public Double getBalance() { return balance; }
+    public void setBalance(Double balance) { this.balance = balance; }
 
     public boolean isDeleted() { return isDeleted; }
     public void setDeleted(boolean deleted) { isDeleted = deleted; }
