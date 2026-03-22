@@ -1,4 +1,5 @@
 package com.leviathanledger.leviathan.model;
+
 public enum ERole {
     ROLE_CLERK("Clerk"),
     ROLE_LAWYER("Lawyer"),

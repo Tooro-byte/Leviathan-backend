@@ -5,8 +5,8 @@ import com.leviathanledger.leviathan.model.Role;
 import com.leviathanledger.leviathan.model.User;
 import com.leviathanledger.leviathan.repository.RoleRepository;
 import com.leviathanledger.leviathan.repository.UserRepository;
-import com.leviathanledger.leviathan.security.JwtUtils;
 import com.leviathanledger.leviathan.security.UserDetailsImpl;
+import com.leviathanledger.leviathan.security.jwt.JwtUtils; // FIXED: Pointing to sub-package
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -41,8 +41,9 @@ public class AuthController {
 
     @PostMapping("/signin")
     public ResponseEntity<?> authenticateUser(@RequestBody User loginRequest) {
+        // Auth via Email as per LexTracker Frontend protocol
         Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(loginRequest.getUsername(), loginRequest.getPassword()));
+                new UsernamePasswordAuthenticationToken(loginRequest.getEmail(), loginRequest.getPassword()));
 
         SecurityContextHolder.getContext().setAuthentication(authentication);
         String jwt = jwtUtils.generateJwtToken(authentication);
@@ -68,7 +69,6 @@ public class AuthController {
         if (userRepository.existsByUsername(signUpRequest.getUsername())) {
             return ResponseEntity.badRequest().body(Map.of("error", "Username is already taken!"));
         }
-
         if (userRepository.existsByEmail(signUpRequest.getEmail())) {
             return ResponseEntity.badRequest().body(Map.of("error", "Email is already in use!"));
         }
@@ -80,32 +80,29 @@ public class AuthController {
         String strRole = signUpRequest.getRole();
         Set<Role> roles = new HashSet<>();
 
+        // SAFE ROLE MAPPING: Preventing .get() crashes
         if (strRole == null) {
-            Role lawyerRole = roleRepository.findByName(ERole.ROLE_LAWYER)
-                    .orElseThrow(() -> new RuntimeException("Error: Role is not found."));
-            roles.add(lawyerRole);
+            roles.add(roleRepository.findByName(ERole.ROLE_LAWYER)
+                    .orElseThrow(() -> new RuntimeException("Error: Default Role ROLE_LAWYER not found.")));
         } else {
             switch (strRole.toUpperCase()) {
                 case "CLERK":
-                    Role clerkRole = roleRepository.findByName(ERole.ROLE_CLERK)
-                            .orElseThrow(() -> new RuntimeException("Error: Role is not found."));
-                    roles.add(clerkRole);
+                    roles.add(roleRepository.findByName(ERole.ROLE_CLERK)
+                            .orElseThrow(() -> new RuntimeException("Error: ROLE_CLERK not found.")));
                     break;
                 case "CLIENT":
-                    Role clientRole = roleRepository.findByName(ERole.ROLE_CLIENT)
-                            .orElseThrow(() -> new RuntimeException("Error: Role is not found."));
-                    roles.add(clientRole);
+                    roles.add(roleRepository.findByName(ERole.ROLE_CLIENT)
+                            .orElseThrow(() -> new RuntimeException("Error: ROLE_CLIENT not found.")));
                     break;
                 default:
-                    Role lawyerRole = roleRepository.findByName(ERole.ROLE_LAWYER)
-                            .orElseThrow(() -> new RuntimeException("Error: Role is not found."));
-                    roles.add(lawyerRole);
+                    roles.add(roleRepository.findByName(ERole.ROLE_LAWYER)
+                            .orElseThrow(() -> new RuntimeException("Error: ROLE_LAWYER not found.")));
             }
         }
 
         user.setRoles(roles);
         userRepository.save(user);
 
-        return ResponseEntity.ok(Map.of("message", "User registered successfully as " + (strRole != null ? strRole : "LAWYER")));
+        return ResponseEntity.ok(Map.of("message", "User registered successfully"));
     }
 }

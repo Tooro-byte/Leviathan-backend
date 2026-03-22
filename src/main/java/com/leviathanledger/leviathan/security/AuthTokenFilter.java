@@ -1,5 +1,6 @@
 package com.leviathanledger.leviathan.security;
 
+import com.leviathanledger.leviathan.security.jwt.JwtUtils; // FIXED IMPORT
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -11,18 +12,23 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
-import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
+
 import java.io.IOException;
 
-@Component
+/**
+ * AuthTokenFilter - The B2 Bomber
+ * STATUS: CLEAN
+ * Intercepts every request to verify the "Digital Shield" JWT.
+ */
 public class AuthTokenFilter extends OncePerRequestFilter {
-    @Autowired
-    private com.leviathanledger.leviathan.security.JwtUtils jwtUtils;
 
     @Autowired
-    private com.leviathanledger.leviathan.security.UserDetailsServiceImpl userDetailsService;
+    private JwtUtils jwtUtils;
+
+    @Autowired
+    private UserDetailsServiceImpl userDetailsService; // Corrected reference
 
     private static final Logger logger = LoggerFactory.getLogger(AuthTokenFilter.class);
 
@@ -32,26 +38,20 @@ public class AuthTokenFilter extends OncePerRequestFilter {
         try {
             String jwt = parseJwt(request);
 
-            if (jwt != null) {
-                logger.info("B2 BOMBER: Found JWT in request to: {}", request.getRequestURI());
+            if (jwt != null && jwtUtils.validateJwtToken(jwt)) {
+                String username = jwtUtils.getUserNameFromJwtToken(jwt);
 
-                if (jwtUtils.validateJwtToken(jwt)) {
-                    String username = jwtUtils.getUserNameFromJwtToken(jwt);
+                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+                UsernamePasswordAuthenticationToken authentication =
+                        new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
 
-                    UserDetails userDetails = userDetailsService.loadUserByUsername(username);
-                    UsernamePasswordAuthenticationToken authentication =
-                            new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
-                    authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-
-                    SecurityContextHolder.getContext().setAuthentication(authentication);
-                    logger.info("B2 BOMBER: User {} successfully authenticated for this session.", username);
-                } else {
-                    logger.warn("B2 BOMBER: JWT was found but validation failed (Secret/Expiration issue)!");
-                }
+                SecurityContextHolder.getContext().setAuthentication(authentication);
+                logger.info("🛡️ B2 BOMBER: Authentication successful for: {}", username);
             }
         } catch (Exception e) {
-            logger.error("B2 BOMBER: Cannot set user authentication: {}", e.getMessage());
+            logger.error("🛡️ B2 BOMBER: Cannot set user authentication: {}", e.getMessage());
         }
 
         filterChain.doFilter(request, response);
@@ -59,8 +59,9 @@ public class AuthTokenFilter extends OncePerRequestFilter {
 
     private String parseJwt(HttpServletRequest request) {
         String headerAuth = request.getHeader("Authorization");
-        if (StringUtils.hasText(headerAuth) && headerAuth.startsWith("Bearer ")) {
-            return headerAuth.substring(7);
+
+        if (StringUtils.hasText(headerAuth) && headerAuth.trim().startsWith("Bearer ")) {
+            return headerAuth.trim().substring(7);
         }
         return null;
     }

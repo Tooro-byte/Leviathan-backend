@@ -23,20 +23,26 @@ import java.util.Arrays;
 import java.util.Collections;
 
 /**
- * LexTracker Security Engine
- * Purpose: Enforces the "Digital Shield" by managing JWT validation,
- * CORS policy, and Persona-based access control.
+ * LexTracker Production Security Engine
+ * STATUS: CLEAN - Unified Package Structure
+ * 🛡️ The Digital Shield is now fully integrated into the main application scan.
  */
 @Configuration
 @EnableWebSecurity
-@EnableMethodSecurity // CRITICAL: This enables @PreAuthorize for Lawyer/Clerk roles
+@EnableMethodSecurity
 public class WebSecurityConfig {
 
     @Autowired
     private AuthEntryPointJwt unauthorizedHandler;
 
-    @Autowired
-    private com.leviathanledger.leviathan.security.AuthTokenFilter authTokenFilter;
+    /**
+     * WITCH KILLER: Defined here to allow manual insertion into the filter chain.
+     * Ensure the @Component annotation is removed from the AuthTokenFilter class itself.
+     */
+    @Bean
+    public AuthTokenFilter authenticationJwtTokenFilter() {
+        return new AuthTokenFilter();
+    }
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -55,13 +61,8 @@ public class WebSecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        // Explicitly allow the local development origin
-        configuration.setAllowedOrigins(Collections.singletonList("http://localhost:3000"));
-
-        // Methods required for Case Management & Evidence Hashing
+        configuration.setAllowedOriginPatterns(Collections.singletonList("http://localhost:3000"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
-
-        // Standard headers + Authorization for our "Chain of Custody" tokens
         configuration.setAllowedHeaders(Arrays.asList(
                 "Authorization",
                 "Content-Type",
@@ -71,12 +72,9 @@ public class WebSecurityConfig {
                 "Access-Control-Request-Method",
                 "Access-Control-Request-Headers"
         ));
-
-        // Allow the browser to expose the Authorization header to our Next.js App
         configuration.setExposedHeaders(Collections.singletonList("Authorization"));
-
         configuration.setAllowCredentials(true);
-        configuration.setMaxAge(3600L); // Cache pre-flight for 1 hour
+        configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
@@ -87,33 +85,31 @@ public class WebSecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                .csrf(csrf -> csrf.disable()) // Stateless JWT doesn't require CSRF
+                .csrf(csrf -> csrf.disable())
                 .exceptionHandling(exception -> exception.authenticationEntryPoint(unauthorizedHandler))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth ->
                         auth
-                                // Public entry points: The "Vault Door" must be open to let people sign in
+                                // Public entry points
                                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                                 .requestMatchers("/api/auth/**").permitAll()
                                 .requestMatchers("/auth/**").permitAll()
                                 .requestMatchers("/h2-console/**").permitAll()
+                                .requestMatchers("/api/debug-logger/**").permitAll()
 
-                                // Protected evidence: Only authenticated Personas can view files
+                                // Protected routes
                                 .requestMatchers("/uploads/**").authenticated()
-
-                                // Case Management endpoints
                                 .requestMatchers("/api/cases/**").authenticated()
                                 .requestMatchers("/api/documents/**").authenticated()
 
-                                // All other endpoints require a valid JWT
                                 .anyRequest().authenticated()
                 );
 
         // Security Header Fix for H2 Console & Secure Frames
         http.headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()));
 
-        // Add the JWT Filter (The "Digital Handshake" verifier)
-        http.addFilterBefore(authTokenFilter, UsernamePasswordAuthenticationFilter.class);
+        // Add the JWT Filter before the standard Username/Password filter
+        http.addFilterBefore(authenticationJwtTokenFilter(), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
