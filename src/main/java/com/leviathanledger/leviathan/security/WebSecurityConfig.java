@@ -22,11 +22,6 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.Arrays;
 import java.util.Collections;
 
-/**
- * LexTracker Production Security Engine
- * STATUS: CLEAN - Unified Package Structure
- * 🛡️ The Digital Shield is now fully integrated into the main application scan.
- */
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
@@ -35,10 +30,6 @@ public class WebSecurityConfig {
     @Autowired
     private AuthEntryPointJwt unauthorizedHandler;
 
-    /**
-     * WITCH KILLER: Defined here to allow manual insertion into the filter chain.
-     * Ensure the @Component annotation is removed from the AuthTokenFilter class itself.
-     */
     @Bean
     public AuthTokenFilter authenticationJwtTokenFilter() {
         return new AuthTokenFilter();
@@ -54,25 +45,12 @@ public class WebSecurityConfig {
         return authConfig.getAuthenticationManager();
     }
 
-    /**
-     * CORS Configuration: Strictly allows the LexTracker Next.js Frontend.
-     */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-
         configuration.setAllowedOriginPatterns(Collections.singletonList("http://localhost:3000"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
-        configuration.setAllowedHeaders(Arrays.asList(
-                "Authorization",
-                "Content-Type",
-                "Accept",
-                "X-Requested-With",
-                "Origin",
-                "Access-Control-Request-Method",
-                "Access-Control-Request-Headers"
-        ));
-        configuration.setExposedHeaders(Collections.singletonList("Authorization"));
+        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Accept", "X-Requested-With", "Origin"));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
 
@@ -93,22 +71,16 @@ public class WebSecurityConfig {
                                 // Public entry points
                                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                                 .requestMatchers("/api/auth/**").permitAll()
-                                .requestMatchers("/auth/**").permitAll()
+                                .requestMatchers("/error").permitAll() // ALLOWS THE TRUTH TO BE TOLD
                                 .requestMatchers("/h2-console/**").permitAll()
-                                .requestMatchers("/api/debug-logger/**").permitAll()
 
                                 // Protected routes
-                                .requestMatchers("/uploads/**").authenticated()
                                 .requestMatchers("/api/cases/**").authenticated()
                                 .requestMatchers("/api/documents/**").authenticated()
-
                                 .anyRequest().authenticated()
                 );
 
-        // Security Header Fix for H2 Console & Secure Frames
         http.headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()));
-
-        // Add the JWT Filter before the standard Username/Password filter
         http.addFilterBefore(authenticationJwtTokenFilter(), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

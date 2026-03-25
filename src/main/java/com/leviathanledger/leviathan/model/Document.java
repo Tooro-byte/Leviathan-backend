@@ -1,5 +1,6 @@
 package com.leviathanledger.leviathan.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
@@ -41,8 +42,10 @@ public class Document {
     @Column(nullable = false)
     private boolean archived = false;
 
+    // CRITICAL FIX: Prevent lazy proxy serialization error that caused 500
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "legal_case_id")
+    @JsonIgnore
     private LegalCase legalCase;
 
     @PrePersist
@@ -55,7 +58,8 @@ public class Document {
 
     public Document() {}
 
-    public Document(String fileName, String fileType, String filePath, String fileHash, String sourceOrigin, String uploadedBy, LegalCase legalCase) {
+    public Document(String fileName, String fileType, String filePath, String fileHash,
+                    String sourceOrigin, String uploadedBy, LegalCase legalCase) {
         this.fileName = fileName;
         this.fileType = fileType;
         this.filePath = filePath;
@@ -66,7 +70,6 @@ public class Document {
     }
 
     // --- GETTERS AND SETTERS ---
-
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 

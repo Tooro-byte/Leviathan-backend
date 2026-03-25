@@ -1,6 +1,6 @@
 package com.leviathanledger.leviathan.security;
 
-import com.leviathanledger.leviathan.security.jwt.JwtUtils; // FIXED IMPORT
+import com.leviathanledger.leviathan.security.jwt.JwtUtils;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -19,8 +19,8 @@ import java.io.IOException;
 
 /**
  * AuthTokenFilter - The B2 Bomber
- * STATUS: CLEAN
- * Intercepts every request to verify the "Digital Shield" JWT.
+ * STATUS: WHOLESOME
+ * Purpose: Intercepts requests to verify the JWT before they hit the Controllers.
  */
 public class AuthTokenFilter extends OncePerRequestFilter {
 
@@ -28,7 +28,7 @@ public class AuthTokenFilter extends OncePerRequestFilter {
     private JwtUtils jwtUtils;
 
     @Autowired
-    private UserDetailsServiceImpl userDetailsService; // Corrected reference
+    private UserDetailsServiceImpl userDetailsService;
 
     private static final Logger logger = LoggerFactory.getLogger(AuthTokenFilter.class);
 
@@ -48,10 +48,10 @@ public class AuthTokenFilter extends OncePerRequestFilter {
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
                 SecurityContextHolder.getContext().setAuthentication(authentication);
-                logger.info("🛡️ B2 BOMBER: Authentication successful for: {}", username);
+                logger.info("🛡️ B2 BOMBER: Authorization granted for user: {}", username);
             }
         } catch (Exception e) {
-            logger.error("🛡️ B2 BOMBER: Cannot set user authentication: {}", e.getMessage());
+            logger.error("🛡️ B2 BOMBER: Security Check Failed: {}", e.getMessage());
         }
 
         filterChain.doFilter(request, response);

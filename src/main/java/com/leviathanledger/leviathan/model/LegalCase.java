@@ -1,8 +1,10 @@
 package com.leviathanledger.leviathan.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import org.hibernate.annotations.SQLRestriction;
+
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -11,6 +13,7 @@ import java.util.List;
 @Entity
 @Table(name = "legal_cases")
 @SQLRestriction("is_deleted = false")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"}) // Prevents proxy serialization issues
 public class LegalCase {
 
     @Id
@@ -25,34 +28,34 @@ public class LegalCase {
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    private String status = "PENDING"; // PENDING, DISCOVERY, HEARING, JUDGMENT
+    private String status = "PENDING";
 
     private String documentPath;
 
-    // --- NEW CLIENT IDENTITY FIELDS ---
+    // --- CLIENT IDENTITY FIELDS ---
     private String clientName;
 
     @Column(nullable = false)
-    private String clientEmail; // The "Golden Key" for dashboard access
+    private String clientEmail;
 
     private String clientPhone;
     private String clientLocation;
     private String clientDob;
     private Integer clientAge;
-    private String clientPhotoPath; // Store path to the uploaded image
+    private String clientPhotoPath;
 
     // --- FINANCIALS ---
     private Double balance = 0.0;
 
     /**
-     * ALIGNMENT FIX: Maps 'registeredBy' to 'primaryCounsel' in JSON
+     * Maps 'registeredBy' to 'primaryCounsel' in JSON responses
      */
     @JsonProperty("primaryCounsel")
     @Column(updatable = false)
     private String registeredBy;
 
     /**
-     * AUDIT LOGGING
+     * AUDIT LOGGING - Stored as simple strings for easy frontend display
      */
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "case_audit_logs", joinColumns = @JoinColumn(name = "case_id"))
@@ -70,24 +73,28 @@ public class LegalCase {
     public LegalCase() {}
 
     /**
-     * Logic to auto-log status changes with a timestamp.
+     * Custom setter for status that automatically logs the change
      */
     public void setStatus(String newStatus) {
-        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
-        if (this.status != null && !this.status.equals(newStatus)) {
+        if (newStatus != null && !newStatus.equals(this.status)) {
+            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
             this.auditLogs.add("⚖️ Status transitioned from " + this.status + " to " + newStatus + " [" + timestamp + "]");
-        } else if (this.status == null) {
-            this.auditLogs.add("🚀 Case Initialized for Client: " + this.clientName + " [" + timestamp + "]");
         }
         this.status = newStatus;
     }
 
+    /**
+     * Add a manual audit log entry (used by Audit Concierge)
+     */
     public void addManualLog(String message) {
-        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
-        this.auditLogs.add(message + " [" + timestamp + "]");
+        if (message != null && !message.trim().isEmpty()) {
+            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+            this.auditLogs.add(message + " [" + timestamp + "]");
+        }
     }
 
     // --- Getters and Setters ---
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
@@ -137,6 +144,9 @@ public class LegalCase {
 
     public List<String> getAuditLogs() { return auditLogs; }
     public void setAuditLogs(List<String> auditLogs) { this.auditLogs = auditLogs; }
+
+    public LocalDateTime getFiledAt() { return filedAt; }
+    public void setFiledAt(LocalDateTime filedAt) { this.filedAt = filedAt; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

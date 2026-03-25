@@ -18,10 +18,10 @@ public class UserDetailsServiceImpl implements UserDetailsService {
     @Override
     @Transactional
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
-        // Updated to findByEmail for frontend compatibility
+        // Front-end sends email as the primary login ID
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new UsernameNotFoundException("User Not Found with email: " + email));
+                .orElseThrow(() -> new UsernameNotFoundException("Vault Error: User not found with email: " + email));
 
-        return com.leviathanledger.leviathan.security.UserDetailsImpl.build(user);
+        return UserDetailsImpl.build(user);
     }
 }
