@@ -1,4 +1,4 @@
-package com.leviathanledger.leviathan.security.jwt;
+package com.leviathanledger.leviathan.security;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

@@ -1,8 +1,11 @@
 package com.leviathanledger.leviathan.controller;
 
 import com.leviathanledger.leviathan.model.LegalCase;
+import com.leviathanledger.leviathan.model.User;
 import com.leviathanledger.leviathan.service.LegalCaseService;
 import com.leviathanledger.leviathan.service.AuditLogService;
+import com.leviathanledger.leviathan.repository.UserRepository;
+import com.leviathanledger.leviathan.security.UserDetailsImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
@@ -11,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,11 +32,67 @@ public class LegalCaseController {
     @Autowired
     private AuditLogService auditLogService;
 
+    @Autowired
+    private UserRepository userRepository;
+
     private final Path root = Paths.get("uploads");
 
     @GetMapping
     public List<LegalCase> getAllCases() {
         return legalCaseService.getAllCases();
+    }
+
+    /**
+     * NEW: Get case for authenticated client by User ID (most reliable)
+     * This is the primary endpoint for client dashboard
+     */
+    @GetMapping("/my-case")
+    public ResponseEntity<?> getMyCase(Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()) {
+            System.out.println("=== AUTH FAILED: No authentication ===");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Authentication required"));
+        }
+
+        UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
+        Long userId = userDetails.getId();
+
+        System.out.println("=== CLIENT USER ID FROM AUTH: " + userId + " ===");
+
+        Optional<LegalCase> clientCase = legalCaseService.getCaseByUserId(userId);
+
+        if (clientCase.isEmpty()) {
+            System.out.println("=== NO CASE FOUND FOR USER ID: " + userId + " ===");
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", "No case found for this client"));
+        }
+
+        System.out.println("=== CASE FOUND: " + clientCase.get().getCaseNumber() + " ===");
+        return ResponseEntity.ok(clientCase.get());
+    }
+
+    /**
+     * Backward compatibility: Get case by email (legacy endpoint)
+     * Still works but recommended to use /my-case instead
+     */
+    @GetMapping("/client")
+    public ResponseEntity<?> getClientCaseByEmail(Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Authentication required"));
+        }
+
+        String clientEmail = authentication.getName();
+        System.out.println("=== CLIENT EMAIL FROM AUTH (legacy): " + clientEmail + " ===");
+
+        Optional<LegalCase> clientCase = legalCaseService.getCaseByClientEmail(clientEmail);
+
+        if (clientCase.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", "No case found for this client"));
+        }
+
+        return ResponseEntity.ok(clientCase.get());
     }
 
     @GetMapping("/{id}")
@@ -44,6 +104,7 @@ public class LegalCaseController {
 
     /**
      * Create new case (with optional file attachment)
+     * Automatically links client by email to get user_id
      */
     @PostMapping(consumes = {"multipart/form-data"})
     public ResponseEntity<?> createCase(
@@ -54,6 +115,24 @@ public class LegalCaseController {
         if (authentication == null || !authentication.isAuthenticated()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body("Registry Access Denied: Auth Token Missing.");
+        }
+
+        // Link client by email to get user_id
+        if (legalCase.getClientEmail() != null && !legalCase.getClientEmail().isEmpty()) {
+            Optional<User> clientUser = userRepository.findByEmail(legalCase.getClientEmail());
+            if (clientUser.isPresent()) {
+                legalCase.setClient(clientUser.get());
+                System.out.println("=== Linked case to client ID: " + clientUser.get().getId() +
+                        " for email: " + legalCase.getClientEmail() + " ===");
+            } else {
+                System.out.println("=== WARNING: Client email not found in users table: " +
+                        legalCase.getClientEmail() + " ===");
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "Client email does not exist. Please register the client first."));
+            }
+        } else {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "Client email is required to create a case"));
         }
 
         if (file != null && !file.isEmpty()) {
@@ -80,7 +159,7 @@ public class LegalCaseController {
         auditLogService.logAction(
                 "DOSSIER_INITIATED",
                 authentication.getName(),
-                "Created Case: " + savedCase.getCaseNumber()
+                "Created Case: " + savedCase.getCaseNumber() + " for client: " + savedCase.getClientEmail()
         );
 
         return ResponseEntity.status(HttpStatus.CREATED).body(savedCase);

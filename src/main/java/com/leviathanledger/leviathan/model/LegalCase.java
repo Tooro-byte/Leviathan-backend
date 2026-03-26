@@ -1,5 +1,6 @@
 package com.leviathanledger.leviathan.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
@@ -13,7 +14,7 @@ import java.util.List;
 @Entity
 @Table(name = "legal_cases")
 @SQLRestriction("is_deleted = false")
-@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"}) // Prevents proxy serialization issues
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class LegalCase {
 
     @Id
@@ -34,15 +35,18 @@ public class LegalCase {
 
     // --- CLIENT IDENTITY FIELDS ---
     private String clientName;
-
-    @Column(nullable = false)
     private String clientEmail;
-
     private String clientPhone;
     private String clientLocation;
     private String clientDob;
     private Integer clientAge;
     private String clientPhotoPath;
+
+    // NEW: Link to User entity - ADDED @JsonIgnore to fix serialization
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "client_id")
+    @JsonIgnore  // THIS FIXES THE "Could not initialize proxy" error
+    private User client;
 
     // --- FINANCIALS ---
     private Double balance = 0.0;
@@ -132,6 +136,9 @@ public class LegalCase {
 
     public String getClientPhotoPath() { return clientPhotoPath; }
     public void setClientPhotoPath(String clientPhotoPath) { this.clientPhotoPath = clientPhotoPath; }
+
+    public User getClient() { return client; }
+    public void setClient(User client) { this.client = client; }
 
     public Double getBalance() { return balance; }
     public void setBalance(Double balance) { this.balance = balance; }

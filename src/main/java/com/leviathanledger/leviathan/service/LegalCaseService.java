@@ -24,9 +24,26 @@ public class LegalCaseService {
 
     /**
      * Retrieves a case using the Client Email registered by the lawyer.
+     * Legacy method - kept for backward compatibility
      */
     public Optional<LegalCase> getCaseByClientEmail(String email) {
         return repository.findByClientEmailAndIsDeletedFalse(email);
+    }
+
+    /**
+     * NEW: Retrieves a case using the Client's User ID (more reliable)
+     * This is the preferred method for client dashboard
+     */
+    public Optional<LegalCase> getCaseByUserId(Long userId) {
+        return repository.findByClient_IdAndIsDeletedFalse(userId);
+    }
+
+    /**
+     * NEW: Get case by client email and return the case or null
+     * Convenience method for the client endpoint
+     */
+    public LegalCase getCaseByClientEmailOrNull(String email) {
+        return repository.findByClientEmailAndIsDeletedFalse(email).orElse(null);
     }
 
     public LegalCase saveCase(LegalCase legalCase) {

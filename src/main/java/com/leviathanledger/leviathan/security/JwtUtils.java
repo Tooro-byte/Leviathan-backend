@@ -1,4 +1,4 @@
-package com.leviathanledger.leviathan.security.jwt;
+package com.leviathanledger.leviathan.security;
 
 import com.leviathanledger.leviathan.security.UserDetailsImpl;
 import io.jsonwebtoken.*;

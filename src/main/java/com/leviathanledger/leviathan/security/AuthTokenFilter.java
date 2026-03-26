@@ -1,6 +1,4 @@
 package com.leviathanledger.leviathan.security;
-
-import com.leviathanledger.leviathan.security.jwt.JwtUtils;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

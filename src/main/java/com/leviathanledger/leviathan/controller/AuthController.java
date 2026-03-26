@@ -6,7 +6,7 @@ import com.leviathanledger.leviathan.model.User;
 import com.leviathanledger.leviathan.repository.RoleRepository;
 import com.leviathanledger.leviathan.repository.UserRepository;
 import com.leviathanledger.leviathan.security.UserDetailsImpl;
-import com.leviathanledger.leviathan.security.jwt.JwtUtils; // FIXED: Pointing to sub-package
+import com.leviathanledger.leviathan.security.JwtUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;

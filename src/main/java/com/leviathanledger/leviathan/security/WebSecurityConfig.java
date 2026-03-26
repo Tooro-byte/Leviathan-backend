@@ -1,6 +1,5 @@
 package com.leviathanledger.leviathan.security;
 
-import com.leviathanledger.leviathan.security.jwt.AuthEntryPointJwt;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

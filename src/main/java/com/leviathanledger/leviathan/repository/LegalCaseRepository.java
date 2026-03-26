@@ -15,6 +15,12 @@ public interface LegalCaseRepository extends JpaRepository<LegalCase, Long> {
     Optional<LegalCase> findByClientEmailAndIsDeletedFalse(String clientEmail);
 
     /**
+     * NEW: Finds a case by the client's user ID (more reliable)
+     * Used for client dashboard to fetch case by authenticated user ID
+     */
+    Optional<LegalCase> findByClient_IdAndIsDeletedFalse(Long userId);
+
+    /**
      * Checks if a case already exists for this email to prevent duplicates.
      */
     boolean existsByClientEmailAndIsDeletedFalse(String clientEmail);
