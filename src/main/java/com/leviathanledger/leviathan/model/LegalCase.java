@@ -42,11 +42,15 @@ public class LegalCase {
     private Integer clientAge;
     private String clientPhotoPath;
 
-    // NEW: Link to User entity - ADDED @JsonIgnore to fix serialization
+    // Link to User entity - ADDED @JsonIgnore to fix serialization
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "client_id")
     @JsonIgnore  // THIS FIXES THE "Could not initialize proxy" error
     private User client;
+
+    // NEW: Court hearing tracking fields
+    private LocalDateTime nextHearingDate;
+    private Integer caseStage = 0; // 0=FILED, 1=DISCOVERY, 2=HEARING, 3=JUDGMENT
 
     // --- FINANCIALS ---
     private Double balance = 0.0;
@@ -139,6 +143,12 @@ public class LegalCase {
 
     public User getClient() { return client; }
     public void setClient(User client) { this.client = client; }
+
+    public LocalDateTime getNextHearingDate() { return nextHearingDate; }
+    public void setNextHearingDate(LocalDateTime nextHearingDate) { this.nextHearingDate = nextHearingDate; }
+
+    public Integer getCaseStage() { return caseStage; }
+    public void setCaseStage(Integer caseStage) { this.caseStage = caseStage; }
 
     public Double getBalance() { return balance; }
     public void setBalance(Double balance) { this.balance = balance; }
