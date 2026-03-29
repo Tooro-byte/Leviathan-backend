@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/documents")
@@ -27,6 +29,7 @@ public class DocumentController {
 
     /**
      * Upload Endpoint: Receives physical file and metadata.
+     * Only LAWYER and CLERK can upload documents.
      */
     @PostMapping(value = "/upload/{caseId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('LAWYER') or hasRole('CLERK')")
@@ -38,7 +41,7 @@ public class DocumentController {
             HttpServletRequest request) {
 
         if (file.isEmpty()) {
-            return ResponseEntity.badRequest().body("Error: Cannot upload an empty case file.");
+            return ResponseEntity.badRequest().body(Map.of("error", "Cannot upload an empty case file."));
         }
 
         try {
@@ -50,22 +53,84 @@ public class DocumentController {
             return ResponseEntity.ok(doc);
         } catch (Exception e) {
             logger.error("🛡️ B2 BOMBER: Chain of Custody Breach: {}", e.getMessage(), e);
-            return ResponseEntity.internalServerError().body("Chain of Custody Error: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("error", "Chain of Custody Error: " + e.getMessage()));
         }
     }
 
     /**
-     * Get Documents by Case - Fixed to prevent lazy loading / proxy serialization errors
+     * Get Documents by Case - Allows CLIENTS to view documents
+     * Simplified version - authentication handled by @PreAuthorize
      */
     @GetMapping("/case/{caseId}")
-    @PreAuthorize("hasAnyRole('LAWYER', 'CLERK', 'JUDGE')")
+    @PreAuthorize("hasAnyRole('LAWYER', 'CLERK', 'CLIENT')")
     public ResponseEntity<?> getDocumentsByCase(@PathVariable Long caseId) {
         try {
+            logger.info("Fetching documents for case ID: {}", caseId);
             List<Document> documents = documentService.getDocumentsByCaseId(caseId);
+            logger.info("Returning {} documents for case {}", documents.size(), caseId);
             return ResponseEntity.ok(documents);
         } catch (Exception e) {
             logger.error("Vault Access Error for case {}: {}", caseId, e.getMessage(), e);
-            return ResponseEntity.internalServerError().body("Vault Access Error: " + e.getMessage());
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("error", "Vault Access Error: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Download a specific document
+     */
+    @GetMapping("/download/{documentId}")
+    @PreAuthorize("hasAnyRole('LAWYER', 'CLERK', 'CLIENT')")
+    public ResponseEntity<?> downloadDocument(@PathVariable Long documentId) {
+        try {
+            Document doc = documentService.getDocumentById(documentId);
+            if (doc == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("error", "Document not found"));
+            }
+
+            byte[] fileData = documentService.downloadDocument(documentId);
+
+            String contentType = doc.getFileType() != null ? doc.getFileType() : "application/octet-stream";
+            String filename = doc.getFileName() != null ? doc.getFileName() : "document";
+
+            return ResponseEntity.ok()
+                    .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
+                    .header("Content-Type", contentType)
+                    .body(fileData);
+
+        } catch (Exception e) {
+            logger.error("Document download error: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Download failed: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * View/Preview a document (opens in browser)
+     */
+    @GetMapping("/view/{documentId}")
+    @PreAuthorize("hasAnyRole('LAWYER', 'CLERK', 'JUDGE', 'CLIENT')")
+    public ResponseEntity<?> viewDocument(@PathVariable Long documentId) {
+        try {
+            Document doc = documentService.getDocumentById(documentId);
+            if (doc == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("error", "Document not found"));
+            }
+
+            byte[] fileData = documentService.downloadDocument(documentId);
+            String contentType = doc.getFileType() != null ? doc.getFileType() : "application/pdf";
+
+            return ResponseEntity.ok()
+                    .header("Content-Type", contentType)
+                    .header("Content-Disposition", "inline; filename=\"" + doc.getFileName() + "\"")
+                    .body(fileData);
+
+        } catch (Exception e) {
+            logger.error("Document view error: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "View failed: " + e.getMessage()));
         }
     }
 }

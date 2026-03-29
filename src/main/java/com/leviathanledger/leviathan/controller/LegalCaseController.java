@@ -1,5 +1,6 @@
 package com.leviathanledger.leviathan.controller;
 
+import org.springframework.security.access.prepost.PreAuthorize;
 import com.leviathanledger.leviathan.model.LegalCase;
 import com.leviathanledger.leviathan.model.User;
 import com.leviathanledger.leviathan.service.LegalCaseService;
@@ -225,5 +226,96 @@ public class LegalCaseController {
         } catch (Exception e) {
             return ResponseEntity.notFound().build();
         }
+    }
+
+    /**
+     * Registry Verification - For clerks to verify file submission to court
+     * This endpoint is used by the Clerk Dashboard
+     */
+    @PostMapping("/{id}/registry-verify")
+    @PreAuthorize("hasRole('CLERK') or hasRole('LAWYER')")
+    public ResponseEntity<?> registryVerify(
+            @PathVariable Long id,
+            @RequestBody Map<String, String> request,
+            Authentication auth) {
+
+        String note = request.get("note");
+        String timestamp = request.get("timestamp");
+
+        if (note == null || note.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Verification note is required"));
+        }
+
+        return legalCaseService.getCaseById(id).map(legalCase -> {
+            // Add verification log to case audit trail
+            String verificationLog = "📋 REGISTRY VERIFICATION: " + note + " [Verified by: " + auth.getName() + " at " + timestamp + "]";
+            legalCase.addManualLog(verificationLog);
+
+            // Update case status if needed
+            if ("PENDING".equals(legalCase.getStatus())) {
+                legalCase.setStatus("REGISTRY_VERIFIED");
+            }
+
+            LegalCase updated = legalCaseService.saveCase(legalCase);
+
+            // Log the action
+            auditLogService.logAction(
+                    "REGISTRY_VERIFICATION",
+                    auth.getName(),
+                    "Case: " + legalCase.getCaseNumber() + " | Note: " + note
+            );
+
+            return ResponseEntity.ok(Map.of(
+                    "message", "Registry verification recorded successfully",
+                    "case", updated
+            ));
+        }).orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Service of Process - GPS-verified summons delivery
+     * This endpoint is used by the Clerk Dashboard
+     */
+    @PostMapping("/service-of-process/verify")
+    @PreAuthorize("hasRole('CLERK') or hasRole('LAWYER')")
+    public ResponseEntity<?> serviceOfProcessVerify(
+            @RequestBody Map<String, Object> request,
+            Authentication auth) {
+
+        Long caseId = request.get("caseId") != null ? Long.valueOf(request.get("caseId").toString()) : null;
+        String caseNumber = (String) request.get("caseNumber");
+        Double lat = request.get("lat") != null ? Double.valueOf(request.get("lat").toString()) : null;
+        Double lng = request.get("lng") != null ? Double.valueOf(request.get("lng").toString()) : null;
+        String timestamp = (String) request.get("timestamp");
+
+        if (caseId == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Case ID is required"));
+        }
+
+        if (lat == null || lng == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "GPS coordinates are required"));
+        }
+
+        return legalCaseService.getCaseById(caseId).map(legalCase -> {
+            // Add service of process log to case audit trail
+            String serviceLog = "📜 SERVICE OF PROCESS: Summons served at GPS coordinates (" + lat + ", " + lng +
+                    ") [Served by: " + auth.getName() + " at " + timestamp + "]";
+            legalCase.addManualLog(serviceLog);
+
+            LegalCase updated = legalCaseService.saveCase(legalCase);
+
+            // Log the action
+            auditLogService.logAction(
+                    "SERVICE_OF_PROCESS",
+                    auth.getName(),
+                    "Case: " + legalCase.getCaseNumber() + " | GPS: " + lat + ", " + lng
+            );
+
+            return ResponseEntity.ok(Map.of(
+                    "message", "Service of process recorded successfully",
+                    "case", updated,
+                    "gpsLocation", Map.of("lat", lat, "lng", lng)
+            ));
+        }).orElse(ResponseEntity.notFound().build());
     }
 }

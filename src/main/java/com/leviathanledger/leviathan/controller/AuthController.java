@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.*;
 import java.util.stream.Collectors;
 
-@CrossOrigin(origins = "*", maxAge = 3600)
+@CrossOrigin(origins = "http://localhost:3000", allowCredentials = "true")
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
@@ -41,7 +41,9 @@ public class AuthController {
 
     @PostMapping("/signin")
     public ResponseEntity<?> authenticateUser(@RequestBody User loginRequest) {
-        // Auth via Email as per LexTracker Frontend protocol
+        System.out.println("=== SIGNIN REQUEST RECEIVED ===");
+        System.out.println("Email: " + loginRequest.getEmail());
+
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(loginRequest.getEmail(), loginRequest.getPassword()));
 
@@ -61,18 +63,31 @@ public class AuthController {
         response.put("email", userDetails.getEmail());
         response.put("roles", roles);
 
+        System.out.println("=== SIGNIN SUCCESSFUL for: " + userDetails.getEmail() + " ===");
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/signup")
     public ResponseEntity<?> registerUser(@RequestBody User signUpRequest) {
+        System.out.println("=== SIGNUP REQUEST RECEIVED ===");
+        System.out.println("Username: " + signUpRequest.getUsername());
+        System.out.println("Email: " + signUpRequest.getEmail());
+        System.out.println("Role: " + signUpRequest.getRole());
+        System.out.println("Password length: " + (signUpRequest.getPassword() != null ? signUpRequest.getPassword().length() : 0));
+
+        // Check if username exists
         if (userRepository.existsByUsername(signUpRequest.getUsername())) {
+            System.out.println("Username already exists: " + signUpRequest.getUsername());
             return ResponseEntity.badRequest().body(Map.of("error", "Username is already taken!"));
         }
+
+        // Check if email exists
         if (userRepository.existsByEmail(signUpRequest.getEmail())) {
+            System.out.println("Email already exists: " + signUpRequest.getEmail());
             return ResponseEntity.badRequest().body(Map.of("error", "Email is already in use!"));
         }
 
+        System.out.println("Creating new user...");
         User user = new User(signUpRequest.getUsername(),
                 signUpRequest.getEmail(),
                 encoder.encode(signUpRequest.getPassword()));
@@ -80,28 +95,35 @@ public class AuthController {
         String strRole = signUpRequest.getRole();
         Set<Role> roles = new HashSet<>();
 
-        // SAFE ROLE MAPPING: Preventing .get() crashes
+        System.out.println("Processing role: " + strRole);
+
         if (strRole == null) {
+            System.out.println("No role provided, defaulting to ROLE_LAWYER");
             roles.add(roleRepository.findByName(ERole.ROLE_LAWYER)
                     .orElseThrow(() -> new RuntimeException("Error: Default Role ROLE_LAWYER not found.")));
         } else {
             switch (strRole.toUpperCase()) {
                 case "CLERK":
+                    System.out.println("Assigning ROLE_CLERK");
                     roles.add(roleRepository.findByName(ERole.ROLE_CLERK)
                             .orElseThrow(() -> new RuntimeException("Error: ROLE_CLERK not found.")));
                     break;
                 case "CLIENT":
+                    System.out.println("Assigning ROLE_CLIENT");
                     roles.add(roleRepository.findByName(ERole.ROLE_CLIENT)
                             .orElseThrow(() -> new RuntimeException("Error: ROLE_CLIENT not found.")));
                     break;
                 default:
+                    System.out.println("Assigning default ROLE_LAWYER for role: " + strRole);
                     roles.add(roleRepository.findByName(ERole.ROLE_LAWYER)
                             .orElseThrow(() -> new RuntimeException("Error: ROLE_LAWYER not found.")));
             }
         }
 
         user.setRoles(roles);
+        System.out.println("Saving user to database...");
         userRepository.save(user);
+        System.out.println("=== USER SAVED SUCCESSFULLY! ID: " + user.getId() + " ===");
 
         return ResponseEntity.ok(Map.of("message", "User registered successfully"));
     }
