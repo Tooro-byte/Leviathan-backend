@@ -9,8 +9,7 @@ import java.util.Optional;
 @Repository
 public interface DocumentRepository extends JpaRepository<Document, Long> {
     List<Document> findByLegalCaseId(Long caseId);
-
     List<Document> findByLegalCaseIdAndArchivedFalse(Long caseId);
-
+    List<Document> findByLegalCaseIdAndDocumentCategory(Long caseId, String category);
     Optional<Object> findByFileHash(String s);
 }

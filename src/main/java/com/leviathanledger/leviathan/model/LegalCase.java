@@ -42,29 +42,32 @@ public class LegalCase {
     private Integer clientAge;
     private String clientPhotoPath;
 
-    // Link to User entity - ADDED @JsonIgnore to fix serialization
+    // --- DEFENDANT & COURT DETAILS (For PDF Generation) ---
+    private String defendantName;
+    private String defendantAddress;
+    private String defendantEmail;
+    private String courtLocation = "Kampala";
+    private String division;
+    private String caseSubject;
+
+    // Link to User entity
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "client_id")
-    @JsonIgnore  // THIS FIXES THE "Could not initialize proxy" error
+    @JsonIgnore
     private User client;
 
-    // NEW: Court hearing tracking fields
+    // Court hearing tracking
     private LocalDateTime nextHearingDate;
-    private Integer caseStage = 0; // 0=FILED, 1=DISCOVERY, 2=HEARING, 3=JUDGMENT
+    private Integer caseStage = 0;
 
-    // --- FINANCIALS ---
+    // Financials
     private Double balance = 0.0;
 
-    /**
-     * Maps 'registeredBy' to 'primaryCounsel' in JSON responses
-     */
     @JsonProperty("primaryCounsel")
     @Column(updatable = false)
     private String registeredBy;
 
-    /**
-     * AUDIT LOGGING - Stored as simple strings for easy frontend display
-     */
+    // Audit Logging
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "case_audit_logs", joinColumns = @JoinColumn(name = "case_id"))
     @Column(name = "log_entry")
@@ -72,16 +75,15 @@ public class LegalCase {
     private List<String> auditLogs = new ArrayList<>();
 
     private LocalDateTime filedAt = LocalDateTime.now();
-
     private boolean isDeleted = false;
-
-    @Column(updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 
     public LegalCase() {}
 
+    // --- CUSTOM LOGIC METHODS ---
+
     /**
-     * Custom setter for status that automatically logs the change
+     * Custom setter for status that automatically logs the change.
      */
     public void setStatus(String newStatus) {
         if (newStatus != null && !newStatus.equals(this.status)) {
@@ -92,7 +94,7 @@ public class LegalCase {
     }
 
     /**
-     * Add a manual audit log entry (used by Audit Concierge)
+     * Add a manual audit log entry.
      */
     public void addManualLog(String message) {
         if (message != null && !message.trim().isEmpty()) {
@@ -101,7 +103,7 @@ public class LegalCase {
         }
     }
 
-    // --- Getters and Setters ---
+    // --- GETTERS AND SETTERS ---
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -116,10 +118,10 @@ public class LegalCase {
     public void setDescription(String description) { this.description = description; }
 
     public String getStatus() { return status; }
-
     public String getDocumentPath() { return documentPath; }
     public void setDocumentPath(String documentPath) { this.documentPath = documentPath; }
 
+    // Client fields
     public String getClientName() { return clientName; }
     public void setClientName(String clientName) { this.clientName = clientName; }
 
@@ -141,18 +143,42 @@ public class LegalCase {
     public String getClientPhotoPath() { return clientPhotoPath; }
     public void setClientPhotoPath(String clientPhotoPath) { this.clientPhotoPath = clientPhotoPath; }
 
+    // Defendant fields
+    public String getDefendantName() { return defendantName; }
+    public void setDefendantName(String defendantName) { this.defendantName = defendantName; }
+
+    public String getDefendantAddress() { return defendantAddress; }
+    public void setDefendantAddress(String defendantAddress) { this.defendantAddress = defendantAddress; }
+
+    public String getDefendantEmail() { return defendantEmail; }
+    public void setDefendantEmail(String defendantEmail) { this.defendantEmail = defendantEmail; }
+
+    // Court fields
+    public String getCourtLocation() { return courtLocation; }
+    public void setCourtLocation(String courtLocation) { this.courtLocation = courtLocation; }
+
+    public String getDivision() { return division; }
+    public void setDivision(String division) { this.division = division; }
+
+    public String getCaseSubject() { return caseSubject; }
+    public void setCaseSubject(String caseSubject) { this.caseSubject = caseSubject; }
+
+    // User relationship
     public User getClient() { return client; }
     public void setClient(User client) { this.client = client; }
 
+    // Hearing tracking
     public LocalDateTime getNextHearingDate() { return nextHearingDate; }
     public void setNextHearingDate(LocalDateTime nextHearingDate) { this.nextHearingDate = nextHearingDate; }
 
     public Integer getCaseStage() { return caseStage; }
     public void setCaseStage(Integer caseStage) { this.caseStage = caseStage; }
 
+    // Financials
     public Double getBalance() { return balance; }
     public void setBalance(Double balance) { this.balance = balance; }
 
+    // Audit
     public boolean isDeleted() { return isDeleted; }
     public void setDeleted(boolean deleted) { isDeleted = deleted; }
 
@@ -162,6 +188,7 @@ public class LegalCase {
     public List<String> getAuditLogs() { return auditLogs; }
     public void setAuditLogs(List<String> auditLogs) { this.auditLogs = auditLogs; }
 
+    // Timestamps
     public LocalDateTime getFiledAt() { return filedAt; }
     public void setFiledAt(LocalDateTime filedAt) { this.filedAt = filedAt; }
 
