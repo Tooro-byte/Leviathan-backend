@@ -6,6 +6,7 @@ import com.leviathanledger.leviathan.model.User;
 import com.leviathanledger.leviathan.repository.DocumentRepository;
 import com.leviathanledger.leviathan.repository.LegalCaseRepository;
 import com.leviathanledger.leviathan.repository.UserRepository;
+import com.leviathanledger.leviathan.util.FileHasher;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -19,6 +20,11 @@ import java.nio.file.Paths;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * LEVIATHAN LEDGER V2.0 - CORE DOCUMENT SERVICE
+ * Lead Architect: Richard Baluku
+ * Status: Production-Ready with Integrity Engine
+ */
 @Service
 public class DocumentService {
 
@@ -38,7 +44,7 @@ public class DocumentService {
     private AuditLogService auditLogService;
 
     /**
-     * Process document upload with full chain of custody
+     * Process document upload with full chain of custody and SHA-256 Hashing.
      */
     @Transactional
     public Document processUpload(MultipartFile file, Long caseId, Authentication auth, String sourceOrigin) {
@@ -51,7 +57,7 @@ public class DocumentService {
         LegalCase legalCase = legalCaseRepository.findById(caseId)
                 .orElseThrow(() -> new RuntimeException("Integrity Error: Targeted Case Vault does not exist."));
 
-        // 3. ATOMIC STORAGE & HASHING
+        // 3. ATOMIC STORAGE & HASHING (Integrity Engine Initiation)
         FileStorageService.FileUploadResult storageResult = fileStorageService.processAndSave(file);
 
         // 4. DUPLICATE HASH GUARD
@@ -65,32 +71,30 @@ public class DocumentService {
         doc.setFileName(storageResult.fileName());
         doc.setFileType(storageResult.contentType());
         doc.setFilePath(storageResult.filePath());
-        doc.setFileHash(storageResult.fileHash());
+        doc.setFileHash(storageResult.fileHash()); // THE DIGITAL STAMP
 
-        // Safe handling of sourceOrigin (prevents null issues)
+        // Safe handling of sourceOrigin
         doc.setSourceOrigin(sourceOrigin != null && !sourceOrigin.trim().isEmpty()
                 ? sourceOrigin.trim()
-                : "Unknown Origin");
+                : "Registry Submission");
 
         doc.setUploadedBy(uploader.getUsername());
         doc.setLegalCase(legalCase);
         doc.setVersion(1);
         doc.setArchived(false);
 
-        // Save document
         Document savedDoc = documentRepository.save(doc);
 
-        // Add audit log to the case
-        legalCase.addManualLog("DOCUMENT UPLOADED: " + savedDoc.getFileName() + " by " + uploader.getUsername());
+        // 6. INTERNAL CASE LOGGING
+        legalCase.addManualLog("DOCUMENT CERTIFIED: " + savedDoc.getFileName() + " by " + uploader.getUsername());
         legalCaseRepository.save(legalCase);
 
-        // 6. IMMUTABLE AUDIT LOGGING
+        // 7. IMMUTABLE AUDIT LOGGING
         auditLogService.logAction(
                 "DOCUMENT_CERTIFIED",
                 uploader.getUsername(),
                 "Case: " + legalCase.getCaseNumber() +
                         " | File: " + savedDoc.getFileName() +
-                        " | Origin: " + (sourceOrigin != null ? sourceOrigin : "Unknown") +
                         " | Fingerprint: " + storageResult.fileHash()
         );
 
@@ -98,28 +102,29 @@ public class DocumentService {
     }
 
     /**
-     * Retrieves all active (non-archived) evidence for a specific case.
+     * THE INTEGRITY ENGINE: Verification Logic
+     * Re-hashes the file on the server and compares it against the DB record.
      */
-    public List<Document> getDocumentsByCaseId(Long caseId) {
-        if (caseId == null) {
-            throw new IllegalArgumentException("Case ID cannot be null");
+    public boolean verifyDocumentIntegrity(Long documentId) {
+        try {
+            Document doc = getDocumentById(documentId);
+            if (doc == null) return false;
+
+            Path filePath = Paths.get(doc.getFilePath());
+            if (!Files.exists(filePath)) return false;
+
+            // Generate fresh hash from the physical file
+            String currentPhysicalHash = FileHasher.calculateHashFromPath(filePath);
+
+            // Compare with the 'Digital Stamp' stored during upload
+            return currentPhysicalHash.equals(doc.getFileHash());
+        } catch (Exception e) {
+            return false;
         }
-        return documentRepository.findByLegalCaseIdAndArchivedFalse(caseId);
     }
 
     /**
-     * Get a single document by its ID
-     */
-    public Document getDocumentById(Long documentId) {
-        if (documentId == null) {
-            throw new IllegalArgumentException("Document ID cannot be null");
-        }
-        Optional<Document> doc = documentRepository.findById(documentId);
-        return doc.orElse(null);
-    }
-
-    /**
-     * Download a document and return its byte array
+     * Download a document with Automatic Integrity Shield.
      */
     public byte[] downloadDocument(Long documentId) throws IOException {
         Document doc = getDocumentById(documentId);
@@ -127,10 +132,16 @@ public class DocumentService {
             throw new RuntimeException("Document not found with ID: " + documentId);
         }
 
-        // Try multiple possible paths
+        // INTEGRITY SHIELD: Verify hash before returning bytes
+        if (!verifyDocumentIntegrity(documentId)) {
+            auditLogService.logAction("INTEGRITY_ALARM", "SYSTEM",
+                    "TAMPER DETECTED: File ID " + documentId + " has been modified outside of Leviathan.");
+            throw new RuntimeException("CRITICAL: Document integrity check failed. The file has been tampered with.");
+        }
+
+        // Original path-traversal logic maintained
         Path filePath = Paths.get(doc.getFilePath());
         if (!Files.exists(filePath)) {
-            // Try alternative path - just filename in uploads/evidence
             String altPath = "uploads/evidence/" + doc.getFileName();
             filePath = Paths.get(altPath);
             if (!Files.exists(filePath)) {
@@ -151,7 +162,7 @@ public class DocumentService {
     }
 
     /**
-     * Archive a document (soft delete)
+     * Archive a document (soft delete) - Chains to LegalCase Manual Log
      */
     @Transactional
     public Document archiveDocument(Long documentId) {
@@ -161,7 +172,6 @@ public class DocumentService {
         }
         doc.setArchived(true);
 
-        // Add audit log
         LegalCase legalCase = doc.getLegalCase();
         if (legalCase != null) {
             legalCase.addManualLog("DOCUMENT ARCHIVED: " + doc.getFileName());
@@ -169,6 +179,16 @@ public class DocumentService {
         }
 
         return documentRepository.save(doc);
+    }
+
+    /**
+     * Retrieves all active (non-archived) evidence for a specific case.
+     */
+    public List<Document> getDocumentsByCaseId(Long caseId) {
+        if (caseId == null) {
+            throw new IllegalArgumentException("Case ID cannot be null");
+        }
+        return documentRepository.findByLegalCaseIdAndArchivedFalse(caseId);
     }
 
     /**
@@ -182,7 +202,17 @@ public class DocumentService {
     }
 
     /**
-     * Delete a document permanently (use with caution)
+     * Get a single document by its ID
+     */
+    public Document getDocumentById(Long documentId) {
+        if (documentId == null) {
+            throw new IllegalArgumentException("Document ID cannot be null");
+        }
+        return documentRepository.findById(documentId).orElse(null);
+    }
+
+    /**
+     * Delete a document permanently (with physical file removal)
      */
     @Transactional
     public void deleteDocumentPermanently(Long documentId) throws IOException {
@@ -191,16 +221,13 @@ public class DocumentService {
             throw new RuntimeException("Document not found with ID: " + documentId);
         }
 
-        // Delete physical file
         Path filePath = Paths.get(doc.getFilePath());
         if (Files.exists(filePath)) {
             Files.delete(filePath);
         }
 
-        // Delete database record
         documentRepository.delete(doc);
 
-        // Add audit log
         LegalCase legalCase = doc.getLegalCase();
         if (legalCase != null) {
             legalCase.addManualLog("DOCUMENT PERMANENTLY DELETED: " + doc.getFileName());
