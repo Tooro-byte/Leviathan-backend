@@ -14,8 +14,10 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/documents")
@@ -58,8 +60,7 @@ public class DocumentController {
     }
 
     /**
-     * Get Documents by Case - Allows CLIENTS to view documents
-     * Simplified version - authentication handled by @PreAuthorize
+     * Get Documents by Case - Safe serialization with null handling
      */
     @GetMapping("/case/{caseId}")
     @PreAuthorize("hasAnyRole('LAWYER', 'CLERK', 'CLIENT')")
@@ -67,8 +68,29 @@ public class DocumentController {
         try {
             logger.info("Fetching documents for case ID: {}", caseId);
             List<Document> documents = documentService.getDocumentsByCaseId(caseId);
-            logger.info("Returning {} documents for case {}", documents.size(), caseId);
-            return ResponseEntity.ok(documents);
+
+            // Convert to safe DTO to prevent null serialization issues
+            List<Map<String, Object>> safeDocuments = documents.stream().map(doc -> {
+                Map<String, Object> map = new HashMap<>();
+                map.put("id", doc.getId());
+                map.put("fileName", doc.getFileName());
+                map.put("fileType", doc.getFileType());
+                map.put("fileSize", doc.getFileSize());
+                map.put("uploadedAt", doc.getUploadedAt());
+                map.put("documentCategory", doc.getDocumentCategory());
+                map.put("documentType", doc.getDocumentType());
+                map.put("certified", doc.isCertified());
+                map.put("certifiedBy", doc.getCertifiedBy());
+                map.put("certifiedAt", doc.getCertifiedAt());
+                map.put("verificationCode", doc.getVerificationCode());
+                map.put("verificationUrl", doc.getVerificationUrl());
+                map.put("uploadedBy", doc.getUploadedBy());
+                map.put("displayDocumentType", doc.getDisplayDocumentType());
+                return map;
+            }).collect(Collectors.toList());
+
+            logger.info("Returning {} documents for case {}", safeDocuments.size(), caseId);
+            return ResponseEntity.ok(safeDocuments);
         } catch (Exception e) {
             logger.error("Vault Access Error for case {}: {}", caseId, e.getMessage(), e);
             return ResponseEntity.internalServerError()
@@ -110,7 +132,7 @@ public class DocumentController {
      * View/Preview a document (opens in browser)
      */
     @GetMapping("/view/{documentId}")
-    @PreAuthorize("hasAnyRole('LAWYER', 'CLERK', 'JUDGE', 'CLIENT')")
+    @PreAuthorize("hasAnyRole('LAWYER', 'CLERK', 'CLIENT')")
     public ResponseEntity<?> viewDocument(@PathVariable Long documentId) {
         try {
             Document doc = documentService.getDocumentById(documentId);
