@@ -99,6 +99,48 @@ public class DocumentController {
     }
 
     /**
+     * NEW: Get all evidence documents (for Clerk Dashboard)
+     * Returns all documents with category "EVIDENCE", sorted by upload date (newest first)
+     */
+    @GetMapping("/evidence")
+    @PreAuthorize("hasAnyRole('LAWYER', 'CLERK')")
+    public ResponseEntity<?> getAllEvidence() {
+        try {
+            logger.info("Fetching all evidence documents");
+            List<Document> allDocuments = documentService.getAllDocuments();
+
+            // Filter only EVIDENCE documents
+            List<Document> evidenceDocs = allDocuments.stream()
+                    .filter(doc -> "EVIDENCE".equals(doc.getDocumentCategory()))
+                    .sorted((a, b) -> b.getUploadedAt().compareTo(a.getUploadedAt()))
+                    .collect(Collectors.toList());
+
+            // Convert to safe DTO
+            List<Map<String, Object>> safeEvidence = evidenceDocs.stream().map(doc -> {
+                Map<String, Object> map = new HashMap<>();
+                map.put("id", doc.getId());
+                map.put("fileName", doc.getFileName());
+                map.put("fileType", doc.getFileType());
+                map.put("fileSize", doc.getFileSize());
+                map.put("uploadedAt", doc.getUploadedAt());
+                map.put("sourceOrigin", doc.getSourceOrigin());
+                map.put("uploadedBy", doc.getUploadedBy());
+                map.put("caseId", doc.getLegalCase() != null ? doc.getLegalCase().getId() : null);
+                map.put("caseNumber", doc.getLegalCase() != null ? doc.getLegalCase().getCaseNumber() : "Unknown");
+                map.put("fileHash", doc.getFileHash());
+                return map;
+            }).collect(Collectors.toList());
+
+            logger.info("Returning {} evidence documents", safeEvidence.size());
+            return ResponseEntity.ok(safeEvidence);
+        } catch (Exception e) {
+            logger.error("Error fetching evidence documents: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("error", "Failed to fetch evidence: " + e.getMessage()));
+        }
+    }
+
+    /**
      * Download a specific document
      */
     @GetMapping("/download/{documentId}")

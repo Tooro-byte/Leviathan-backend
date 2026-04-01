@@ -7,12 +7,12 @@ import com.itextpdf.kernel.geom.Rectangle;
 import com.itextpdf.kernel.pdf.*;
 import com.itextpdf.kernel.pdf.canvas.PdfCanvas;
 import com.itextpdf.kernel.pdf.extgstate.PdfExtGState;
+import com.itextpdf.kernel.pdf.xobject.PdfFormXObject;
 import com.itextpdf.layout.Canvas;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Image;
 import com.itextpdf.layout.element.Paragraph;
 import com.itextpdf.layout.properties.TextAlignment;
-import com.itextpdf.layout.properties.VerticalAlignment;
 import com.leviathanledger.leviathan.model.LegalCase;
 import com.leviathanledger.leviathan.util.LegalTemplateUtil;
 import org.slf4j.Logger;
@@ -93,18 +93,57 @@ public class PdfGeneratorService {
     }
 
     /**
-     * CERTIFY a document - removes watermark, adds Lex Stamp and QR Code
+     * CERTIFY a document - REMOVES watermark, adds Lex Stamp and QR Code
+     * This is the key fix - we create a fresh PDF without the watermark
      */
     public byte[] certifyDocument(byte[] draftPdfBytes, LegalCase legalCase,
                                   String certifiedBy, String verificationUrl, String verificationCode) {
         try {
-            // First, add Lex Stamp
-            byte[] stampedPdf = addLexStamp(draftPdfBytes, legalCase, certifiedBy);
+            logger.info("Starting certification process for case: {}", legalCase.getCaseNumber());
 
-            // Then, add QR Code for verification
-            byte[] finalPdf = addQRCode(stampedPdf, verificationUrl, verificationCode);
+            // Step 1: Read the draft PDF
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            PdfReader reader = new PdfReader(new ByteArrayInputStream(draftPdfBytes));
+            PdfDocument sourcePdf = new PdfDocument(reader);
+            PdfDocument targetPdf = new PdfDocument(new PdfWriter(baos));
 
+            int numberOfPages = sourcePdf.getNumberOfPages();
+            logger.info("Draft PDF has {} pages", numberOfPages);
+
+            // Step 2: Copy each page WITHOUT the watermark (creating fresh pages)
+            for (int i = 1; i <= numberOfPages; i++) {
+                PdfPage sourcePage = sourcePdf.getPage(i);
+                Rectangle pageSize = sourcePage.getPageSize();
+
+                // Add new page to target PDF
+                PdfPage targetPage = targetPdf.addNewPage();
+                targetPage.getPageSize();
+
+                // Copy content from source to target (watermark is not copied because it's drawn separately)
+                PdfFormXObject pageCopy = sourcePage.copyAsFormXObject(targetPdf);
+                PdfCanvas canvas = new PdfCanvas(targetPage);
+                canvas.addXObject(pageCopy, 0, 0);
+
+                // Add Lex Stamp on first page only
+                if (i == 1) {
+                    addLexStampToPage(canvas, pageSize, legalCase, certifiedBy);
+                }
+
+                canvas.release();
+            }
+
+            sourcePdf.close();
+            targetPdf.close();
+
+            logger.info("Watermark removed, Lex Stamp added");
+
+            // Step 3: Add QR code to the new PDF
+            byte[] pdfWithStamp = baos.toByteArray();
+            byte[] finalPdf = addQRCodeToPdf(pdfWithStamp, verificationUrl, verificationCode);
+
+            logger.info("Certification completed successfully");
             return finalPdf;
+
         } catch (Exception e) {
             logger.error("Certification failed: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to certify document: " + e.getMessage(), e);
@@ -112,7 +151,118 @@ public class PdfGeneratorService {
     }
 
     /**
-     * Add DRAFT watermark to PDF
+     * Add Lex Stamp to a specific page
+     */
+    private void addLexStampToPage(PdfCanvas canvas, Rectangle pageSize, LegalCase legalCase, String certifiedBy) {
+        try {
+            canvas.saveState();
+
+            // Draw border box
+            canvas.setStrokeColor(ColorConstants.BLUE);
+            canvas.setLineWidth(1.5f);
+            float boxWidth = pageSize.getWidth() - 80;
+            float boxHeight = 90;
+            float boxX = 40;
+            float boxY = 30;
+            canvas.rectangle(boxX, boxY, boxWidth, boxHeight);
+            canvas.stroke();
+
+            // Add stamp text
+            canvas.beginText();
+            PdfFont font = PdfFontFactory.createFont();
+            canvas.setFontAndSize(font, 8);
+            canvas.setFillColor(ColorConstants.DARK_GRAY);
+
+            String stampText = String.format(
+                    "✓ VERIFIED BY LEXTRACKER INTEGRITY ENGINE\n" +
+                            "Certified by: %s\n" +
+                            "Case: %s\n" +
+                            "Date: %s\n" +
+                            "This document is authentic and verified by LexTracker Uganda.",
+                    certifiedBy,
+                    legalCase.getCaseNumber(),
+                    LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm"))
+            );
+
+            float textX = boxX + 10;
+            float textY = boxY + boxHeight - 15;
+
+            for (String line : stampText.split("\n")) {
+                canvas.moveText(textX, textY);
+                canvas.showText(line);
+                textY -= 12;
+                canvas.newlineText();
+            }
+
+            canvas.endText();
+            canvas.restoreState();
+
+        } catch (Exception e) {
+            logger.error("Failed to add Lex Stamp: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Add QR Code to PDF (only on first page)
+     */
+    private byte[] addQRCodeToPdf(byte[] pdfBytes, String verificationUrl, String verificationCode) {
+        try {
+            // Generate QR code image
+            BufferedImage qrImage = qrCodeService.generateQRCode(verificationUrl, 100, 100);
+            ByteArrayOutputStream qrBaos = new ByteArrayOutputStream();
+            ImageIO.write(qrImage, "png", qrBaos);
+            byte[] qrBytes = qrBaos.toByteArray();
+
+            // Create new PDF with QR code
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            PdfReader reader = new PdfReader(new ByteArrayInputStream(pdfBytes));
+            PdfWriter writer = new PdfWriter(baos);
+            PdfDocument pdfDoc = new PdfDocument(reader, writer);
+
+            // Add QR code to first page only
+            PdfPage firstPage = pdfDoc.getPage(1);
+            Rectangle pageSize = firstPage.getPageSize();
+            PdfCanvas canvas = new PdfCanvas(firstPage);
+            canvas.saveState();
+
+            // Position QR code at bottom right
+            float qrSize = 80;
+            float qrX = pageSize.getWidth() - qrSize - 30;
+            float qrY = 30;
+
+            // Add QR code image
+            com.itextpdf.layout.Canvas layoutCanvas = new Canvas(canvas, pageSize);
+            Image qrCodeImage = new Image(com.itextpdf.io.image.ImageDataFactory.create(qrBytes));
+            qrCodeImage.setFixedPosition(qrX, qrY, qrSize);
+            qrCodeImage.setWidth(qrSize);
+            qrCodeImage.setHeight(qrSize);
+            layoutCanvas.add(qrCodeImage);
+
+            // Add verification text below QR code
+            layoutCanvas.add(new Paragraph("Scan to Verify")
+                    .setFontSize(7)
+                    .setTextAlignment(TextAlignment.CENTER)
+                    .setFixedPosition(qrX, qrY - 15, qrSize));
+
+            layoutCanvas.add(new Paragraph(verificationCode)
+                    .setFontSize(8)
+                    .setBold()
+                    .setTextAlignment(TextAlignment.CENTER)
+                    .setFixedPosition(qrX, qrY - 28, qrSize));
+
+            canvas.restoreState();
+            pdfDoc.close();
+
+            return baos.toByteArray();
+
+        } catch (Exception e) {
+            logger.error("Failed to add QR code: {}", e.getMessage(), e);
+            return pdfBytes;
+        }
+    }
+
+    /**
+     * Add DRAFT watermark to PDF (only for drafts)
      */
     private byte[] addDraftWatermark(byte[] pdfBytes) {
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
@@ -125,12 +275,11 @@ public class PdfGeneratorService {
             for (int i = 1; i <= pdfDoc.getNumberOfPages(); i++) {
                 PdfPage page = pdfDoc.getPage(i);
                 PdfCanvas canvas = new PdfCanvas(page);
-
                 Rectangle pageSize = page.getPageSize();
 
                 canvas.saveState();
                 canvas.setFillColor(ColorConstants.RED);
-                canvas.setExtGState(new PdfExtGState().setFillOpacity(0.3f));
+                canvas.setExtGState(new PdfExtGState().setFillOpacity(0.2f));
                 canvas.beginText();
                 canvas.setFontAndSize(font, 48);
                 canvas.setTextMatrix(1, 0, 0, 1, pageSize.getWidth() / 3, pageSize.getHeight() / 2);
@@ -143,114 +292,6 @@ public class PdfGeneratorService {
             return baos.toByteArray();
         } catch (Exception e) {
             logger.error("Failed to add watermark: {}", e.getMessage(), e);
-            return pdfBytes;
-        }
-    }
-
-    /**
-     * Add Lex Stamp (professional seal) to PDF
-     */
-    private byte[] addLexStamp(byte[] pdfBytes, LegalCase legalCase, String certifiedBy) {
-        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
-            PdfReader reader = new PdfReader(new ByteArrayInputStream(pdfBytes));
-            PdfWriter writer = new PdfWriter(baos);
-            PdfDocument pdfDoc = new PdfDocument(reader, writer);
-
-            String stampText = String.format(
-                    "✓ VERIFIED BY LEXTRACKER INTEGRITY ENGINE\n" +
-                            "Certified by: %s\n" +
-                            "Case: %s\n" +
-                            "Date: %s\n" +
-                            "This is an authentic legal document generated by LexTracker Uganda.\n" +
-                            "The contents of this document are verified and admissible in the Courts of Judicature.",
-                    certifiedBy,
-                    legalCase.getCaseNumber(),
-                    LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm"))
-            );
-
-            for (int i = 1; i <= pdfDoc.getNumberOfPages(); i++) {
-                PdfPage page = pdfDoc.getPage(i);
-                PdfCanvas canvas = new PdfCanvas(page);
-
-                Rectangle pageSize = page.getPageSize();
-                float yPos = 50;
-
-                canvas.saveState();
-                canvas.setFillColor(ColorConstants.DARK_GRAY);
-                canvas.setExtGState(new PdfExtGState().setFillOpacity(0.8f));
-
-                PdfFont font = PdfFontFactory.createFont();
-                canvas.beginText();
-                canvas.setFontAndSize(font, 8);
-                canvas.setTextMatrix(1, 0, 0, 1, 50, yPos);
-
-                String[] lines = stampText.split("\n");
-                for (String line : lines) {
-                    canvas.showText(line);
-                    canvas.newlineText();
-                    yPos -= 12;
-                }
-                canvas.endText();
-                canvas.restoreState();
-
-                // Add a border box around the stamp
-                canvas.saveState();
-                canvas.setStrokeColor(ColorConstants.BLUE);
-                canvas.setLineWidth(1);
-                canvas.rectangle(40, 30, pageSize.getWidth() - 80, 80);
-                canvas.stroke();
-                canvas.restoreState();
-            }
-
-            pdfDoc.close();
-            return baos.toByteArray();
-        } catch (Exception e) {
-            logger.error("Failed to add Lex Stamp: {}", e.getMessage(), e);
-            return pdfBytes;
-        }
-    }
-
-    /**
-     * Add QR Code to PDF for verification
-     */
-    private byte[] addQRCode(byte[] pdfBytes, String verificationUrl, String verificationCode) {
-        try {
-            BufferedImage qrImage = qrCodeService.generateQRCode(verificationUrl, 100, 100);
-            ByteArrayOutputStream qrBaos = new ByteArrayOutputStream();
-            ImageIO.write(qrImage, "png", qrBaos);
-            byte[] qrBytes = qrBaos.toByteArray();
-
-            try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
-                PdfReader reader = new PdfReader(new ByteArrayInputStream(pdfBytes));
-                PdfWriter writer = new PdfWriter(baos);
-                PdfDocument pdfDoc = new PdfDocument(reader, writer);
-
-                for (int i = 1; i <= pdfDoc.getNumberOfPages(); i++) {
-                    PdfPage page = pdfDoc.getPage(i);
-                    Rectangle pageSize = page.getPageSize();
-
-                    PdfCanvas canvas = new PdfCanvas(page);
-                    canvas.saveState();
-
-                    com.itextpdf.layout.Canvas layoutCanvas = new Canvas(canvas, pageSize);
-                    Image qrCodeImage = new Image(com.itextpdf.io.image.ImageDataFactory.create(qrBytes));
-                    qrCodeImage.setFixedPosition(pageSize.getWidth() - 130, 30);
-                    qrCodeImage.setWidth(80);
-                    qrCodeImage.setHeight(80);
-                    layoutCanvas.add(qrCodeImage);
-
-                    layoutCanvas.add(new Paragraph("Scan to Verify")
-                            .setFontSize(7)
-                            .setFixedPosition(pageSize.getWidth() - 125, 15, 100));
-
-                    canvas.restoreState();
-                }
-
-                pdfDoc.close();
-                return baos.toByteArray();
-            }
-        } catch (Exception e) {
-            logger.error("Failed to add QR code: {}", e.getMessage(), e);
             return pdfBytes;
         }
     }

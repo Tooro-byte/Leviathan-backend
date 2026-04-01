@@ -45,13 +45,15 @@ public class DocumentService {
 
     /**
      * Process document upload with full chain of custody and SHA-256 Hashing.
+     * FIXED: Now looks up user by username (since auth.getName() returns username)
      */
     @Transactional
     public Document processUpload(MultipartFile file, Long caseId, Authentication auth, String sourceOrigin) {
 
-        // 1. PERSONA VERIFICATION
-        User uploader = userRepository.findByEmail(auth.getName())
-                .orElseThrow(() -> new RuntimeException("Security Breach: Authorized uploader not found."));
+        // 1. PERSONA VERIFICATION - FIXED: Use findByUsername instead of findByEmail
+        String authName = auth.getName();
+        User uploader = userRepository.findByUsername(authName)
+                .orElseThrow(() -> new RuntimeException("Security Breach: Authorized uploader not found for username: " + authName));
 
         // 2. CASE VERIFICATION
         LegalCase legalCase = legalCaseRepository.findById(caseId)
@@ -82,20 +84,22 @@ public class DocumentService {
         doc.setLegalCase(legalCase);
         doc.setVersion(1);
         doc.setArchived(false);
+        doc.setDocumentCategory("EVIDENCE"); // Explicitly set as evidence for clerk uploads
 
         Document savedDoc = documentRepository.save(doc);
 
         // 6. INTERNAL CASE LOGGING
-        legalCase.addManualLog("DOCUMENT CERTIFIED: " + savedDoc.getFileName() + " by " + uploader.getUsername());
+        legalCase.addManualLog("📎 EVIDENCE UPLOADED: " + savedDoc.getFileName() + " by " + uploader.getUsername() + " (Source: " + sourceOrigin + ")");
         legalCaseRepository.save(legalCase);
 
         // 7. IMMUTABLE AUDIT LOGGING
         auditLogService.logAction(
-                "DOCUMENT_CERTIFIED",
+                "EVIDENCE_UPLOADED",
                 uploader.getUsername(),
                 "Case: " + legalCase.getCaseNumber() +
                         " | File: " + savedDoc.getFileName() +
-                        " | Fingerprint: " + storageResult.fileHash()
+                        " | Fingerprint: " + storageResult.fileHash() +
+                        " | Source: " + sourceOrigin
         );
 
         return savedDoc;
@@ -210,7 +214,12 @@ public class DocumentService {
         }
         return documentRepository.findById(documentId).orElse(null);
     }
-
+    /**
+     * Get all documents (for clerk dashboard)
+     */
+    public List<Document> getAllDocuments() {
+        return documentRepository.findAll();
+    }
     /**
      * Delete a document permanently (with physical file removal)
      */
