@@ -2,6 +2,7 @@ package com.leviathanledger.leviathan.controller;
 
 import com.leviathanledger.leviathan.model.Document;
 import com.leviathanledger.leviathan.service.DocumentService;
+import com.leviathanledger.leviathan.service.DocumentService.EvidenceRecord;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,10 +15,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/documents")
@@ -30,8 +29,7 @@ public class DocumentController {
     private DocumentService documentService;
 
     /**
-     * Upload Endpoint: Receives physical file and metadata.
-     * Only LAWYER and CLERK can upload documents.
+     * Upload Endpoint
      */
     @PostMapping(value = "/upload/{caseId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('LAWYER') or hasRole('CLERK')")
@@ -55,12 +53,13 @@ public class DocumentController {
             return ResponseEntity.ok(doc);
         } catch (Exception e) {
             logger.error("🛡️ B2 BOMBER: Chain of Custody Breach: {}", e.getMessage(), e);
-            return ResponseEntity.internalServerError().body(Map.of("error", "Chain of Custody Error: " + e.getMessage()));
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("error", "Chain of Custody Error: " + e.getMessage()));
         }
     }
 
     /**
-     * Get Documents by Case - Safe serialization with null handling
+     * Get Documents by Case
      */
     @GetMapping("/case/{caseId}")
     @PreAuthorize("hasAnyRole('LAWYER', 'CLERK', 'CLIENT')")
@@ -69,9 +68,8 @@ public class DocumentController {
             logger.info("Fetching documents for case ID: {}", caseId);
             List<Document> documents = documentService.getDocumentsByCaseId(caseId);
 
-            // Convert to safe DTO to prevent null serialization issues
             List<Map<String, Object>> safeDocuments = documents.stream().map(doc -> {
-                Map<String, Object> map = new HashMap<>();
+                Map<String, Object> map = new java.util.HashMap<>();
                 map.put("id", doc.getId());
                 map.put("fileName", doc.getFileName());
                 map.put("fileType", doc.getFileType());
@@ -86,8 +84,9 @@ public class DocumentController {
                 map.put("verificationUrl", doc.getVerificationUrl());
                 map.put("uploadedBy", doc.getUploadedBy());
                 map.put("displayDocumentType", doc.getDisplayDocumentType());
+                map.put("fileHash", doc.getFileHash());  // ✅ FIXED: Added fileHash to response
                 return map;
-            }).collect(Collectors.toList());
+            }).collect(java.util.stream.Collectors.toList());
 
             logger.info("Returning {} documents for case {}", safeDocuments.size(), caseId);
             return ResponseEntity.ok(safeDocuments);
@@ -99,92 +98,94 @@ public class DocumentController {
     }
 
     /**
-     * NEW: Get all evidence documents (for Clerk Dashboard)
-     * Returns all documents with category "EVIDENCE", sorted by upload date (newest first)
+     * Get all evidence documents for Clerk Dashboard
      */
     @GetMapping("/evidence")
     @PreAuthorize("hasAnyRole('LAWYER', 'CLERK')")
-    public ResponseEntity<?> getAllEvidence() {
+    public ResponseEntity<List<EvidenceRecord>> getAllEvidence() {
         try {
-            logger.info("Fetching all evidence documents");
-            List<Document> allDocuments = documentService.getAllDocuments();
-
-            // Filter only EVIDENCE documents
-            List<Document> evidenceDocs = allDocuments.stream()
-                    .filter(doc -> "EVIDENCE".equals(doc.getDocumentCategory()))
-                    .sorted((a, b) -> b.getUploadedAt().compareTo(a.getUploadedAt()))
-                    .collect(Collectors.toList());
-
-            // Convert to safe DTO
-            List<Map<String, Object>> safeEvidence = evidenceDocs.stream().map(doc -> {
-                Map<String, Object> map = new HashMap<>();
-                map.put("id", doc.getId());
-                map.put("fileName", doc.getFileName());
-                map.put("fileType", doc.getFileType());
-                map.put("fileSize", doc.getFileSize());
-                map.put("uploadedAt", doc.getUploadedAt());
-                map.put("sourceOrigin", doc.getSourceOrigin());
-                map.put("uploadedBy", doc.getUploadedBy());
-                map.put("caseId", doc.getLegalCase() != null ? doc.getLegalCase().getId() : null);
-                map.put("caseNumber", doc.getLegalCase() != null ? doc.getLegalCase().getCaseNumber() : "Unknown");
-                map.put("fileHash", doc.getFileHash());
-                return map;
-            }).collect(Collectors.toList());
-
-            logger.info("Returning {} evidence documents", safeEvidence.size());
-            return ResponseEntity.ok(safeEvidence);
+            logger.info("Clerk Dashboard: Fetching all evidence documents using EvidenceRecord");
+            List<EvidenceRecord> evidenceDocs = documentService.getAllEvidenceForClerk();
+            logger.info("Clerk Dashboard: Returning {} evidence records", evidenceDocs.size());
+            return ResponseEntity.ok(evidenceDocs);
         } catch (Exception e) {
-            logger.error("Error fetching evidence documents: {}", e.getMessage(), e);
-            return ResponseEntity.internalServerError()
-                    .body(Map.of("error", "Failed to fetch evidence: " + e.getMessage()));
+            logger.error("Error fetching evidence documents for Clerk: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
         }
     }
 
     /**
-     * Download a specific document
+     * Assigned Tasks Endpoint
+     */
+    @GetMapping("/tasks/assigned")
+    @PreAuthorize("hasAnyRole('LAWYER', 'CLERK')")
+    public ResponseEntity<List<Map<String, Object>>> getAssignedTasks(Authentication auth) {
+        String username = auth != null ? auth.getName() : "unknown";
+        logger.info("Fetching assigned tasks for user: {}", username);
+
+        List<Map<String, Object>> tasks = List.of(
+                Map.of("id", 101, "title", "Review uploaded evidence for Case LEX-UG-2026-1424-KLA",
+                        "status", "PENDING", "priority", "HIGH", "dueDate", "2026-04-10"),
+                Map.of("id", 102, "title", "Prepare Summons to File Defence for Case LEX-UG-2026-5537-KLA",
+                        "status", "IN_PROGRESS", "priority", "MEDIUM", "dueDate", "2026-04-05")
+        );
+
+        return ResponseEntity.ok(tasks);
+    }
+
+    /**
+     * DOWNLOAD DOCUMENT - Fully Fixed
      */
     @GetMapping("/download/{documentId}")
     @PreAuthorize("hasAnyRole('LAWYER', 'CLERK', 'CLIENT')")
-    public ResponseEntity<?> downloadDocument(@PathVariable Long documentId) {
+    public ResponseEntity<byte[]> downloadDocument(@PathVariable Long documentId) {
         try {
+            logger.info("Download request received for document ID: {}", documentId);
+
             Document doc = documentService.getDocumentById(documentId);
             if (doc == null) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body(Map.of("error", "Document not found"));
+                logger.warn("Document not found: ID {}", documentId);
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
             }
 
             byte[] fileData = documentService.downloadDocument(documentId);
 
             String contentType = doc.getFileType() != null ? doc.getFileType() : "application/octet-stream";
-            String filename = doc.getFileName() != null ? doc.getFileName() : "document";
+            String filename = doc.getFileName() != null ? doc.getFileName() : "document.pdf";
+
+            logger.info("Serving download: {} ({} bytes, type: {})", filename, fileData.length, contentType);
 
             return ResponseEntity.ok()
                     .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
                     .header("Content-Type", contentType)
+                    .header("Content-Length", String.valueOf(fileData.length))
                     .body(fileData);
 
         } catch (Exception e) {
-            logger.error("Document download error: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "Download failed: " + e.getMessage()));
+            logger.error("Document download error for ID {}: {}", documentId, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
         }
     }
 
     /**
-     * View/Preview a document (opens in browser)
+     * VIEW DOCUMENT (opens in new tab/browser)
      */
     @GetMapping("/view/{documentId}")
     @PreAuthorize("hasAnyRole('LAWYER', 'CLERK', 'CLIENT')")
-    public ResponseEntity<?> viewDocument(@PathVariable Long documentId) {
+    public ResponseEntity<byte[]> viewDocument(@PathVariable Long documentId) {
         try {
+            logger.info("View request received for document ID: {}", documentId);
+
             Document doc = documentService.getDocumentById(documentId);
             if (doc == null) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body(Map.of("error", "Document not found"));
+                logger.warn("Document not found for view: ID {}", documentId);
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
             }
 
             byte[] fileData = documentService.downloadDocument(documentId);
             String contentType = doc.getFileType() != null ? doc.getFileType() : "application/pdf";
+
+            logger.info("Serving view for: {} (type: {})", doc.getFileName(), contentType);
 
             return ResponseEntity.ok()
                     .header("Content-Type", contentType)
@@ -192,9 +193,8 @@ public class DocumentController {
                     .body(fileData);
 
         } catch (Exception e) {
-            logger.error("Document view error: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "View failed: " + e.getMessage()));
+            logger.error("Document view error for ID {}: {}", documentId, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
         }
     }
 }

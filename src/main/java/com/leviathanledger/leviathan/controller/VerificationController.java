@@ -10,7 +10,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -40,7 +39,7 @@ public class VerificationController {
     public ResponseEntity<?> verifyByHash(@PathVariable String fileHash) {
         logger.info("Public verification request for hash: {}", fileHash);
 
-        Optional<Object> docOpt = documentRepository.findByFileHash(fileHash);
+        Optional<Document> docOpt = documentRepository.findByFileHash(fileHash);
 
         if (docOpt.isEmpty()) {
             logger.warn("Verification failed: No document found with hash {}", fileHash);
@@ -52,7 +51,7 @@ public class VerificationController {
                     ));
         }
 
-        Document document = (Document) docOpt.get();
+        Document document = docOpt.get();
 
         // Build verification response
         Map<String, Object> response = new HashMap<>();
